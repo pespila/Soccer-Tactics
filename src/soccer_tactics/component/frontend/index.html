@@ -137,19 +137,26 @@
     redoStack = [];
   }
 
-  // --- Resize ---
-  function resize() {
+  // --- Resize (only on init / window resize, NOT during drag) ---
+  var cachedW = 0, cachedH = 0;
+
+  function doResize() {
+    // Read the parent width BEFORE we've modified the iframe
     var parentW = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth;
     if (parentW < 100) parentW = window.innerWidth;
     var ratio = (FL + 2 * MARGIN) / (FW + 2 * MARGIN);
 
-    // Fit within viewport height (leave small margin for Streamlit chrome)
-    var maxH = window.innerHeight - 10;
+    // Use the parent/top window height to avoid feedback loop
+    var viewportH;
+    try { viewportH = window.top.innerHeight; } catch(e) { viewportH = 900; }
+    var maxH = viewportH - 80; // leave room for Streamlit header
     var wFromHeight = maxH * ratio;
 
-    // Use the smaller dimension to ensure it fits both width and height
     var w = Math.min(parentW, wFromHeight);
     var h = w / ratio;
+
+    cachedW = w;
+    cachedH = h;
 
     canvas.width = w * window.devicePixelRatio;
     canvas.height = h * window.devicePixelRatio;
@@ -160,15 +167,19 @@
     offsetX = MARGIN * scale;
     offsetY = MARGIN * scale;
 
-    // Resize the parent iframe to fit the canvas exactly
     try {
       if (window.frameElement) {
         window.frameElement.style.height = (h + 2) + "px";
       }
     } catch(e) {}
-
-    return h;
   }
+
+  function applyTransform() {
+    // Re-apply transform without changing canvas size (for redraws during drag)
+    ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+  }
+
+  window.addEventListener("resize", function() { doResize(); render(); });
 
   // --- Drawing ---
   function drawField() {
@@ -270,7 +281,7 @@
   }
 
   function render() {
-    var h = resize();
+    applyTransform();
     drawField();
     drawArrows();
     drawPlayers();
@@ -402,6 +413,7 @@
 
   // --- Start ---
   initState();
+  doResize();
   render();
 })();
 </script>
