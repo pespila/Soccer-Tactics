@@ -35,9 +35,13 @@ def tactics_board(
     home_color: str,
     away_color: str,
     state_version: int = 0,
-    height: int = 600,
+    height: int = 1000,
 ) -> None:
-    """Render the tactics board canvas."""
+    """Render the tactics board canvas.
+
+    Height is set generously to avoid clipping. The canvas maintains
+    its own aspect ratio internally, so extra iframe space is fine.
+    """
     template = _load_template()
 
     init_data = json.dumps({

@@ -141,7 +141,6 @@ tactics_board(
     home_color=home_color,
     away_color=away_color,
     state_version=st.session_state.get("state_version", 0),
-    height=620,
 )
 
 st.caption(
