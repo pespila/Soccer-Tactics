@@ -139,12 +139,21 @@
 
   // --- Resize ---
   function resize() {
-    var w = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth;
-    if (w < 100) w = window.innerWidth;
+    var parentW = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth;
+    if (parentW < 100) parentW = window.innerWidth;
     var ratio = (FL + 2 * MARGIN) / (FW + 2 * MARGIN);
+
+    // Fit within viewport height (leave small margin for Streamlit chrome)
+    var maxH = window.innerHeight - 10;
+    var wFromHeight = maxH * ratio;
+
+    // Use the smaller dimension to ensure it fits both width and height
+    var w = Math.min(parentW, wFromHeight);
     var h = w / ratio;
+
     canvas.width = w * window.devicePixelRatio;
     canvas.height = h * window.devicePixelRatio;
+    canvas.style.width = w + "px";
     canvas.style.height = h + "px";
     ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
     scale = w / (FL + 2 * MARGIN);

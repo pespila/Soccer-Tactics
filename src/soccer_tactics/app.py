@@ -143,8 +143,3 @@ tactics_board(
     state_version=st.session_state.get("state_version", 0),
 )
 
-st.caption(
-    "Drag players and the ball to reposition. "
-    "Switch to arrow mode to draw tactical arrows. "
-    "Ctrl+Z / Ctrl+Shift+Z for undo/redo."
-)
