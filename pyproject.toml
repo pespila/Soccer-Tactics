@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "soccer-tactics"
+version = "1.0.0"
+description = "Interactive soccer/football tactics board built with Streamlit"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Michael Wallner" },
+]
+keywords = ["soccer", "football", "tactics", "streamlit", "coaching"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment :: Simulation",
+]
+dependencies = [
+    "streamlit>=1.36",
+    "pydantic>=2.0",
+    "click>=8.0",
+]
+
+[project.scripts]
+soccer-tactics = "soccer_tactics.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soccer_tactics"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

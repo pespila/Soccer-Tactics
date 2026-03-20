@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soccer Tactics Board</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; overflow: hidden; }
+  canvas {
+    display: block;
+    width: 100%;
+    cursor: grab;
+  }
+  canvas.dragging { cursor: grabbing; }
+  canvas.crosshair { cursor: crosshair; }
+</style>
+</head>
+<body>
+<canvas id="board"></canvas>
+
+<script src="https://unpkg.com/streamlit-component-lib@2.0.0/dist/streamlit-component-lib.js"></script>
+<script>
+(function() {
+  const canvas = document.getElementById("board");
+  const ctx = canvas.getContext("2d");
+
+  // Field dimensions in meters
+  const FL = 105, FW = 68;
+  const MARGIN = 6;
+
+  // State
+  let players = [];
+  let ball = null;
+  let arrows = [];
+  let mode = "move";
+  let homeColor = "#1e56a0";
+  let awayColor = "#d32f2f";
+
+  // Interaction state
+  let dragging = null;
+  let dragType = null; // "player" or "ball"
+  let arrowStart = null;
+  let arrowEnd = null;
+  let selectedId = null;
+  let selectedTeam = null;
+  let pngRequested = false;
+
+  // Coordinate transforms
+  let scale = 1;
+  let offsetX = 0, offsetY = 0;
+
+  function fieldToCanvas(fx, fy) {
+    return [offsetX + fx * scale, offsetY + fy * scale];
+  }
+
+  function canvasToField(cx, cy) {
+    return [(cx - offsetX) / scale, (cy - offsetY) / scale];
+  }
+
+  function resize() {
+    const parent = canvas.parentElement;
+    const w = parent ? parent.clientWidth : window.innerWidth;
+    const ratio = (FL + 2 * MARGIN) / (FW + 2 * MARGIN);
+    const h = w / ratio;
+    canvas.width = w * window.devicePixelRatio;
+    canvas.height = h * window.devicePixelRatio;
+    canvas.style.height = h + "px";
+    ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+    scale = (w - 0) / (FL + 2 * MARGIN);
+    offsetX = MARGIN * scale;
+    offsetY = MARGIN * scale;
+  }
+
+  // ---------- DRAWING ----------
+
+  function drawField() {
+    const w = canvas.width / window.devicePixelRatio;
+    const h = canvas.height / window.devicePixelRatio;
+
+    // Background
+    ctx.fillStyle = "#2d8c3c";
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "transparent";
+
+    // Boundary
+    strokeRect(0, 0, FL, FW);
+
+    // Halfway line
+    drawLine(FL / 2, 0, FL / 2, FW);
+
+    // Center circle
+    drawCircle(FL / 2, FW / 2, 9.15);
+
+    // Center spot
+    fillCircle(FL / 2, FW / 2, 0.3, "#ffffff");
+
+    // Penalty areas
+    strokeRect(0, (FW - 40.32) / 2, 16.5, 40.32);
+    strokeRect(FL - 16.5, (FW - 40.32) / 2, 16.5, 40.32);
+
+    // Goal areas
+    strokeRect(0, (FW - 18.32) / 2, 5.5, 18.32);
+    strokeRect(FL - 5.5, (FW - 18.32) / 2, 5.5, 18.32);
+
+    // Penalty spots
+    fillCircle(11, FW / 2, 0.3, "#ffffff");
+    fillCircle(FL - 11, FW / 2, 0.3, "#ffffff");
+
+    // Penalty arcs
+    drawArc(11, FW / 2, 9.15, -0.93, 0.93);
+    drawArc(FL - 11, FW / 2, 9.15, Math.PI - 0.93, Math.PI + 0.93);
+
+    // Corner arcs
+    drawArc(0, 0, 1, 0, Math.PI / 2);
+    drawArc(FL, 0, 1, Math.PI / 2, Math.PI);
+    drawArc(FL, FW, 1, Math.PI, 3 * Math.PI / 2);
+    drawArc(0, FW, 1, 3 * Math.PI / 2, 2 * Math.PI);
+
+    // Goals
+    ctx.strokeStyle = "#cccccc";
+    ctx.lineWidth = 3;
+    strokeRect(-2.44, (FW - 7.32) / 2, 2.44, 7.32);
+    strokeRect(FL, (FW - 7.32) / 2, 2.44, 7.32);
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+  }
+
+  function strokeRect(fx, fy, fw, fh) {
+    const [x, y] = fieldToCanvas(fx, fy);
+    ctx.strokeRect(x, y, fw * scale, fh * scale);
+  }
+
+  function drawLine(fx1, fy1, fx2, fy2) {
+    const [x1, y1] = fieldToCanvas(fx1, fy1);
+    const [x2, y2] = fieldToCanvas(fx2, fy2);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  function drawCircle(fx, fy, fr) {
+    const [x, y] = fieldToCanvas(fx, fy);
+    ctx.beginPath();
+    ctx.arc(x, y, fr * scale, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  function fillCircle(fx, fy, fr, color) {
+    const [x, y] = fieldToCanvas(fx, fy);
+    ctx.beginPath();
+    ctx.arc(x, y, fr * scale, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function drawArc(fx, fy, fr, startAngle, endAngle) {
+    const [x, y] = fieldToCanvas(fx, fy);
+    ctx.beginPath();
+    ctx.arc(x, y, fr * scale, startAngle, endAngle);
+    ctx.stroke();
+  }
+
+  function drawPlayers() {
+    const r = 2.0 * scale;
+    const fontSize = Math.max(10, Math.round(1.6 * scale));
+
+    players.forEach(function(p) {
+      const [x, y] = fieldToCanvas(p.x, p.y);
+      const color = p.team === "home" ? homeColor : awayColor;
+
+      // Selection glow
+      if (p.id === selectedId && p.team === selectedTeam) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 4, 0, 2 * Math.PI);
+        ctx.strokeStyle = "#ffeb3b";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
+      // Player circle
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Jersey number
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold " + fontSize + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(p.number), x, y + 1);
+    });
+  }
+
+  function drawBall() {
+    if (!ball) return;
+    const [x, y] = fieldToCanvas(ball.x, ball.y);
+    const r = 1.4 * scale;
+
+    // Shadow
+    ctx.beginPath();
+    ctx.arc(x + 1, y + 1, r, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fill();
+
+    // Ball
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Pentagon pattern hint
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.4, 0, 2 * Math.PI);
+    ctx.fillStyle = "#000000";
+    ctx.fill();
+  }
+
+  function drawArrows() {
+    arrows.forEach(function(a) {
+      drawArrowLine(a.start_x, a.start_y, a.end_x, a.end_y, a.color || "#ffeb3b");
+    });
+
+    // Current arrow being drawn
+    if (arrowStart && arrowEnd) {
+      drawArrowLine(arrowStart[0], arrowStart[1], arrowEnd[0], arrowEnd[1], "#ffeb3b");
+    }
+  }
+
+  function drawArrowLine(fx1, fy1, fx2, fy2, color) {
+    const [x1, y1] = fieldToCanvas(fx1, fy1);
+    const [x2, y2] = fieldToCanvas(fx2, fy2);
+    const headLen = 12;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Arrowhead
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function render() {
+    resize();
+    drawField();
+    drawArrows();
+    drawPlayers();
+    drawBall();
+  }
+
+  // ---------- HIT TESTING ----------
+
+  function hitTest(cx, cy) {
+    const [fx, fy] = canvasToField(cx, cy);
+    const hitR = 3.0; // meters
+
+    // Check ball first
+    if (ball) {
+      const dx = fx - ball.x, dy = fy - ball.y;
+      if (dx * dx + dy * dy < hitR * hitR) {
+        return { type: "ball", obj: ball };
+      }
+    }
+
+    // Check players (reverse so top-rendered = first hit)
+    for (let i = players.length - 1; i >= 0; i--) {
+      const p = players[i];
+      const dx = fx - p.x, dy = fy - p.y;
+      if (dx * dx + dy * dy < hitR * hitR) {
+        return { type: "player", obj: p, index: i };
+      }
+    }
+
+    return null;
+  }
+
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
+  // ---------- EVENT HANDLERS ----------
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches) {
+      return [e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top];
+    }
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  }
+
+  function onDown(e) {
+    e.preventDefault();
+    const [cx, cy] = getPos(e);
+
+    if (mode === "arrow") {
+      canvas.classList.add("crosshair");
+      const [fx, fy] = canvasToField(cx, cy);
+      arrowStart = [clamp(fx, 0, FL), clamp(fy, 0, FW)];
+      arrowEnd = arrowStart.slice();
+      return;
+    }
+
+    const hit = hitTest(cx, cy);
+    if (hit) {
+      dragging = hit.obj;
+      dragType = hit.type;
+      if (hit.type === "player") {
+        selectedId = hit.obj.id;
+        selectedTeam = hit.obj.team;
+      }
+      canvas.classList.add("dragging");
+    } else {
+      selectedId = null;
+      selectedTeam = null;
+    }
+    render();
+  }
+
+  function onMove(e) {
+    e.preventDefault();
+    const [cx, cy] = getPos(e);
+    const [fx, fy] = canvasToField(cx, cy);
+
+    if (mode === "arrow" && arrowStart) {
+      arrowEnd = [clamp(fx, 0, FL), clamp(fy, 0, FW)];
+      render();
+      return;
+    }
+
+    if (dragging) {
+      dragging.x = clamp(fx, 0, FL);
+      dragging.y = clamp(fy, 0, FW);
+      render();
+    }
+  }
+
+  function onUp(e) {
+    e.preventDefault();
+    canvas.classList.remove("dragging");
+    canvas.classList.remove("crosshair");
+
+    if (mode === "arrow" && arrowStart && arrowEnd) {
+      const dx = arrowEnd[0] - arrowStart[0];
+      const dy = arrowEnd[1] - arrowStart[1];
+      if (dx * dx + dy * dy > 4) {
+        arrows.push({
+          start_x: arrowStart[0], start_y: arrowStart[1],
+          end_x: arrowEnd[0], end_y: arrowEnd[1],
+          color: "#ffeb3b"
+        });
+      }
+      arrowStart = null;
+      arrowEnd = null;
+      render();
+      sendState();
+      return;
+    }
+
+    if (dragging) {
+      dragging = null;
+      dragType = null;
+      render();
+      sendState();
+    }
+  }
+
+  canvas.addEventListener("mousedown", onDown);
+  canvas.addEventListener("mousemove", onMove);
+  canvas.addEventListener("mouseup", onUp);
+  canvas.addEventListener("mouseleave", onUp);
+  canvas.addEventListener("touchstart", onDown, { passive: false });
+  canvas.addEventListener("touchmove", onMove, { passive: false });
+  canvas.addEventListener("touchend", onUp, { passive: false });
+
+  // ---------- STREAMLIT COMMUNICATION ----------
+
+  function sendState() {
+    const value = {
+      players: players.map(function(p) {
+        return { id: p.id, number: p.number, name: p.name, x: p.x, y: p.y, team: p.team };
+      }),
+      ball: { id: ball.id, number: ball.number, name: ball.name, x: ball.x, y: ball.y, team: ball.team },
+      arrows: arrows.map(function(a) {
+        return { start_x: a.start_x, start_y: a.start_y, end_x: a.end_x, end_y: a.end_y, color: a.color };
+      })
+    };
+
+    // If PNG was requested, include it
+    if (pngRequested) {
+      value.png = canvas.toDataURL("image/png");
+      pngRequested = false;
+    }
+
+    window.Streamlit.setComponentValue(value);
+  }
+
+  function onRender(event) {
+    const args = event.detail.args;
+
+    if (args.players) {
+      players = args.players;
+    }
+    if (args.ball) {
+      ball = args.ball;
+    }
+    if (args.arrows !== undefined) {
+      arrows = args.arrows;
+    }
+    if (args.mode) {
+      mode = args.mode;
+      if (mode === "arrow") {
+        canvas.classList.add("crosshair");
+      } else {
+        canvas.classList.remove("crosshair");
+      }
+    }
+    if (args.homeColor) {
+      homeColor = args.homeColor;
+    }
+    if (args.awayColor) {
+      awayColor = args.awayColor;
+    }
+    if (args.exportPng) {
+      pngRequested = true;
+      // Render first, then send
+      render();
+      sendState();
+      return;
+    }
+
+    render();
+    window.Streamlit.setFrameHeight(canvas.style.height ? parseInt(canvas.style.height) : 500);
+  }
+
+  window.Streamlit.events.addEventListener(window.Streamlit.RENDER_EVENT, onRender);
+  window.Streamlit.setComponentReady();
+})();
+</script>
+</body>
+</html>
