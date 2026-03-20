@@ -150,6 +150,14 @@
     scale = w / (FL + 2 * MARGIN);
     offsetX = MARGIN * scale;
     offsetY = MARGIN * scale;
+
+    // Resize the parent iframe to fit the canvas exactly
+    try {
+      if (window.frameElement) {
+        window.frameElement.style.height = (h + 2) + "px";
+      }
+    } catch(e) {}
+
     return h;
   }
 
