@@ -4,7 +4,6 @@ from soccer_tactics.models import Arrow, BoardState, Player
 
 
 def _make_state() -> BoardState:
-    """Create a minimal board state for testing."""
     return BoardState(
         home_players=[
             Player(id=i, number=i + 1, x=float(i * 5), y=float(i * 5), team="home")
@@ -44,11 +43,7 @@ def test_undo_stack_serialization():
     state = _make_state()
     stack = []
     stack.append(state.model_dump_json())
-
-    # Modify state
     state.home_players[0].x = 99.0
     stack.append(state.model_dump_json())
-
-    # Restore previous
     previous = BoardState.model_validate_json(stack[0])
     assert previous.home_players[0].x == 0.0
